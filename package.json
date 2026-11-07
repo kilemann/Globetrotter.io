@@ -1,6 +1,6 @@
 {
-  "name": "globetrotter",
-  "version": "1.0.0",
+  "name": "stedsnuser",
+  "version": "1.1.0",
   "private": true,
-  "description": "Globetrotter – søk etter land, byer og steder, med fakta fra engelsk Wikipedia, kart og lenke til Google Maps"
+  "description": "Stedsnuser – søk etter land, byer og steder, med fakta fra engelsk Wikipedia, kart og lenke til Google Maps"
 }

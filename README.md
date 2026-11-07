@@ -1,5 +1,5 @@
-# Globetrotter v1.0.0
-For fun searching around the world.
+# Stedsnuser v1.1.0
+For fun searching around the world. (Repoet heter Globetrotter.io, appen heter Stedsnuser.)
 
 App: https://kilemann.github.io/Globetrotter.io/
 
@@ -22,4 +22,5 @@ Googles innebygde kart (Maps Embed API) krever API-nøkkel og Google Cloud-konto
 Sett `version` i `package.json`, `VERSION` og kommentaren øverst i `index.html`, og før opp endringen i info-vinduet og her.
 
 ## Versjoner
+- 1.1.0 – Nytt navn: Stedsnuser (tidligere Globetrotter).
 - 1.0.0 – Første versjon: søk med forslag, utdrag fra engelsk Wikipedia, kart og lenke til Google Maps.
