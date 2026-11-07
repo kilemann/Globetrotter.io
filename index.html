@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Globetrotter</title>
+<meta name="description" content="Globetrotter: søk etter et land, en by eller et sted og få fakta fra Wikipedia, kart og lenke til Google Maps.">
+<meta name="theme-color" content="#EEF1EC" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D1716" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2714%27 fill=%27%231F6F68%27/%3E%3Cpath d=%27M2 16h28M16 2c-5 4-5 24 0 28M16 2c5 4 5 24 0 28M5 9h22M5 23h22%27 stroke=%27%23F2D28A%27 stroke-width=%271.6%27 fill=%27none%27/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<!-- Leaflet 1.9.4 (kart). Integritetsnøklene er fra leafletjs.com/download -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+/* Globetrotter v1.0.0
+   1.0.0  Første versjon: søk med forslag, utdrag fra engelsk Wikipedia, kart (OpenStreetMap)
+          og lenke til Google Maps */
+
+/* Layout: topp med navn/versjon/info, søkefelt, så resultat: tekst til venstre og kart til høyre (stablet på mobil) */
+:root{
+  --bg:#EEF1EC; --surface:#FAFBF8; --ink:#16211F; --muted:#5A6764; --line:#D3DAD5;
+  --sea:#1F6F68; --sea-soft:#D6E8E4; --sand:#C98A2B; --sand-soft:#F4E6CC; --err:#B23A2A;
+  --display:"Fraunces",Georgia,serif;
+  --body:"Figtree",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0D1716; --surface:#15211F; --ink:#E4ECE9; --muted:#8FA09B; --line:#26352F;
+  --sea:#5FC2B6; --sea-soft:#183A36; --sand:#E9B45A; --sand-soft:#3A2E19; --err:#FF8A75; color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15.5px/1.5 var(--body);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.wrap{max-width:1040px;margin:0 auto;padding-block:20px 40px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:18px}
+a{color:var(--sea)}
+
+/* Topp: navn, versjon og info-knapp oppe til venstre */
+.brandrow{display:flex;align-items:center;gap:12px}
+.brand{margin:0;font:800 clamp(28px,6vw,40px)/1 var(--display);letter-spacing:-.02em;display:flex;align-items:center;gap:10px}
+.brand svg{width:.9em;height:.9em;flex:none}
+.brand .ver{font:500 12px var(--mono);color:var(--muted);letter-spacing:0;align-self:flex-end;margin-bottom:4px}
+.infobtn{all:unset;box-sizing:border-box;cursor:pointer;width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line);
+  display:grid;place-items:center;font:700 16px var(--display);color:var(--muted);background:var(--surface)}
+.infobtn:hover{border-color:var(--sea);color:var(--sea)}
+.infobtn:focus-visible{outline:2px solid var(--sea);outline-offset:2px}
+.tag{margin:4px 0 0;color:var(--muted);font-size:14px}
+
+/* Søk */
+.searchbox{position:relative}
+.searchrow{display:flex;gap:8px}
+#q{flex:1;min-width:0;font:inherit;font-size:17px;padding:13px 16px;border:1.5px solid var(--line);border-radius:12px;
+  background:var(--surface);color:var(--ink)}
+#q:focus-visible{outline:2px solid var(--sea);outline-offset:1px;border-color:var(--sea)}
+#go{font:600 16px var(--body);padding:0 20px;border:0;border-radius:12px;background:var(--sea);color:#fff;cursor:pointer}
+@media (prefers-color-scheme:dark){#go{color:#0D1716}}
+#go:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.sugg{position:absolute;z-index:1000;left:0;right:0;top:calc(100% + 6px);margin:0;padding:6px;list-style:none;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.18);max-height:min(60vh,420px);overflow:auto}
+.sugg li{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer}
+.sugg li[aria-selected="true"],.sugg li:hover{background:var(--sea-soft)}
+.thumb{width:40px;height:40px;flex:none;border-radius:6px;background:var(--line) center/cover no-repeat}
+.sugg .t{font-weight:600}
+.sugg .d{font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+
+/* Status og valgliste (flertydige søk) */
+.status{color:var(--muted);margin:0}
+.status.err{color:var(--err)}
+.choices{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.choices h2{margin:0 0 8px;font:600 20px var(--display)}
+.choices ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.choices button{all:unset;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer}
+.choices button:hover,.choices button:focus-visible{background:var(--sea-soft)}
+.choices .t{font-weight:600}
+.choices .d{font-size:13px;color:var(--muted)}
+
+/* Resultat */
+.result{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:760px){.result{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px 20px;min-width:0}
+.card h2{margin:0;font:800 clamp(24px,4.5vw,32px)/1.1 var(--display);letter-spacing:-.01em;overflow-wrap:anywhere}
+.card .desc{margin:4px 0 0;color:var(--sand);font-weight:600}
+.hero{display:block;width:100%;max-height:300px;object-fit:cover;border-radius:10px;margin:14px 0 2px;background:var(--line)}
+.extract{margin:12px 0 0;white-space:pre-line}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:10px;font-weight:600;text-decoration:none;
+  border:1.5px solid var(--sea);color:var(--sea)}
+.btn.solid{background:var(--sea);color:#fff}
+@media (prefers-color-scheme:dark){.btn.solid{color:#0D1716}}
+.btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.mapcard{padding:0;overflow:hidden}
+#map{height:380px;width:100%;background:var(--sea-soft)}
+@media (max-width:760px){#map{height:300px}}
+.mapfoot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px}
+.coord{font:500 13px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.nomap{padding:18px 20px;color:var(--muted)}
+.leaflet-container{font-family:var(--body)}
+
+/* Info-vindu */
+.modal{position:fixed;inset:0;z-index:2000;background:rgba(5,12,11,.55);display:grid;place-items:center;
+  padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.mbox{background:var(--surface);border:1px solid var(--line);border-radius:16px;width:100%;max-width:580px;max-height:100%;overflow:auto;padding:18px 22px 22px;box-shadow:0 24px 70px rgba(0,0,0,.35)}
+.mhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.mhead h2{margin:0;font:700 22px var(--display)}
+.ib{all:unset;cursor:pointer;width:38px;height:38px;display:grid;place-items:center;border-radius:50%;font-size:17px;color:var(--muted)}
+.ib:hover{background:var(--sea-soft)} .ib:focus-visible{outline:2px solid var(--sea)}
+.mbox h3{font:700 15px var(--display);margin:16px 0 6px}
+.mbox p,.mbox li{font-size:14px;line-height:1.55}
+.mbox p{margin:0 0 8px} .mbox ul{margin:0 0 8px;padding-left:20px}
+.mbox kbd{font:12px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px}
+.vlog{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13.5px}
+.vlog b{font-family:var(--mono);font-weight:500}
+footer{font-size:12.5px;color:var(--muted)}
+footer p{margin:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brandrow">
+      <h1 class="brand">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="var(--sea)"/><path d="M2 16h28M16 2c-5 4-5 24 0 28M16 2c5 4 5 24 0 28M5 9h22M5 23h22" stroke="var(--sand-soft)" stroke-width="1.6" fill="none"/></svg>
+        Globetrotter<span class="ver" id="ver">v1.0.0</span>
+      </h1>
+      <button class="infobtn" id="infobtn" aria-label="Om appen og hjelp" title="Om appen og hjelp">i</button>
+    </div>
+    <p class="tag">Søk etter et land, en by eller et sted, hvor som helst i verden.</p>
+  </header>
+
+  <form class="searchbox" id="form" role="search" autocomplete="off">
+    <div class="searchrow">
+      <input id="q" type="search" placeholder="F.eks. Kristiansand, Japan, Machu Picchu…" aria-label="Søk etter sted"
+        role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugg" enterkeyhint="search" spellcheck="false">
+      <button id="go" type="submit">Søk</button>
+    </div>
+    <ul class="sugg" id="sugg" role="listbox" aria-label="Forslag" hidden></ul>
+  </form>
+
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+
+  <section class="choices" id="choices" hidden>
+    <h2 id="choicesTtl">Mente du …</h2>
+    <ul id="choiceList"></ul>
+  </section>
+
+  <section class="result" id="result" hidden>
+    <article class="card" id="info">
+      <h2 id="rTitle"></h2>
+      <p class="desc" id="rDesc"></p>
+      <img class="hero" id="rImg" alt="" hidden>
+      <p class="extract" id="rText"></p>
+      <div class="links">
+        <a class="btn solid" id="rWiki" target="_blank" rel="noopener">Les mer på Wikipedia ↗</a>
+        <a class="btn" id="rGmap" target="_blank" rel="noopener">Åpne i Google Maps ↗</a>
+      </div>
+    </article>
+    <div class="card mapcard">
+      <div id="map" role="img" aria-label="Kart"></div>
+      <p class="nomap" id="nomap" hidden></p>
+      <div class="mapfoot">
+        <span class="coord" id="rCoord"></span>
+        <a class="btn" id="rGmap2" target="_blank" rel="noopener">Google Maps ↗</a>
+      </div>
+    </div>
+  </section>
+
+  <footer><p>Tekst fra <a href="https://en.wikipedia.org" target="_blank" rel="noopener">engelsk Wikipedia</a> (CC BY-SA). Kart © OpenStreetMap contributors.</p></footer>
+</div>
+
+<div class="modal" id="infoModal" hidden>
+  <div class="mbox" role="dialog" aria-modal="true" aria-labelledby="infottl">
+    <div class="mhead"><h2 id="infottl">Om Globetrotter</h2><button class="ib" id="infoclose" aria-label="Lukk">✕</button></div>
+    <h3>Slik bruker du appen</h3>
+    <ul>
+      <li><b>Søk:</b> skriv navnet på et land, en by eller et sted. Forslag dukker opp mens du skriver.</li>
+      <li><b>Velg:</b> trykk på et forslag, eller bruk <kbd>↑</kbd> <kbd>↓</kbd> og <kbd>Enter</kbd>. <kbd>Esc</kbd> lukker forslagene.</li>
+      <li><b>Flere treff:</b> gir navnet flere steder (som «Paris»), får du en liste å velge fra.</li>
+      <li><b>Del og bokmerk:</b> adressen i nettleseren viser hva du har søkt på, så du kan dele den eller gå tilbake med tilbakeknappen.</li>
+    </ul>
+    <h3>Kilder</h3>
+    <p>Teksten er innledningen fra engelsk Wikipedia, med lenke til hele artikkelen. Kartet viser punktet Wikipedia oppgir for stedet. Har artikkelen ikke koordinater, vises ikke noe kart, men Google Maps-knappen virker fortsatt.</p>
+    <p>Kartet inne i appen er OpenStreetMap, fordi Googles innebygde kart krever en API-nøkkel. Google Maps-knappen åpner stedet i Google Maps-appen på mobil, eller på nettsiden på PC.</p>
+    <p>Appen trenger nett. Den lagrer ingenting om deg.</p>
+    <h3>Versjoner</h3>
+    <div class="vlog">
+      <b>v1.0.0</b><span>Første versjon: søk med forslag, utdrag fra engelsk Wikipedia, kart og lenke til Google Maps.</span>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const VERSION = "1.0.0";
+const WIKI = "https://en.wikipedia.org";
+const $ = id => document.getElementById(id);
+
+/* ---------- Wikipedia ---------- */
+// Action API: origin=* gir CORS uten innlogging. formatversion=2 gir pages som liste.
+function apiUrl(params){
+  const p = new URLSearchParams({ action:"query", format:"json", formatversion:"2", origin:"*",
+    prop:"description|pageimages", piprop:"thumbnail", pithumbsize:"80", redirects:"1", ...params });
+  return WIKI + "/w/api.php?" + p.toString();
+}
+function sortPages(data){
+  const pages = (data && data.query && data.query.pages) || [];
+  return pages.filter(p => !p.missing && p.title)
+    .sort((a, b) => (a.index ?? 999) - (b.index ?? 999))
+    .map(p => ({ title: p.title, description: p.description || "", thumb: p.thumbnail ? p.thumbnail.source : "" }));
+}
+async function getJson(url, signal){
+  const r = await fetch(url, { signal, headers: { "Accept": "application/json" } });
+  if (r.status === 404) return { notFound: true };
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+const suggestUrl = term => apiUrl({ generator:"prefixsearch", gpssearch:term, gpslimit:"8", pilimit:"8" });
+const searchUrl  = term => apiUrl({ generator:"search", gsrsearch:term, gsrlimit:"10", pilimit:"10" });
+const titleKey   = title => encodeURIComponent(title.trim().replace(/ /g, "_"));
+const summaryUrl = title => WIKI + "/api/rest_v1/page/summary/" + titleKey(title);
+
+/* ---------- Google Maps (offisielt URL-format, ingen nøkkel: developers.google.com/maps/documentation/urls) ---------- */
+function gmapsUrl(title){
+  return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(title);
+}
+
+/* ---------- Kartzoom ut fra Wikipedias korte beskrivelse ----------
+   Typeordet som står FØRST bestemmer: «City in Texas, United States» er en by, ikke en delstat. */
+const ZOOMS = [
+  [3,  /\b(continent|ocean)\b/],
+  [5,  /\b(island country|island nation|country|sovereign state|nation|kingdom|republic|sea)\b/],   // vinner ved likt startpunkt
+  [7,  /\b(state|province|region|county|island|archipelago|peninsula|lake|mountain range|national park|desert)\b/],
+  [11, /\b(capital|city|metropolis|municipality)\b/],
+  [13, /\b(town|village|district|neighbourhood|neighborhood|suburb)\b/],
+];
+function zoomFor(desc){
+  const d = (desc || "").toLowerCase();
+  let best = 14, at = Infinity;            // 14: bygning, fjell, severdighet o.l.
+  for (const [z, re] of ZOOMS){
+    const m = re.exec(d);
+    if (m && m.index < at){ at = m.index; best = z; }
+  }
+  return best;
+}
+
+/* ---------- Kart (Leaflet + OpenStreetMap) ---------- */
+let map = null, marker = null;
+function showMap(lat, lon, zoom, label){
+  const el = $("map");
+  if (typeof L === "undefined"){           // Leaflet lastet ikke (f.eks. blokkert CDN)
+    el.hidden = true; $("nomap").hidden = false; $("nomap").textContent = "Kartet kunne ikke lastes.";
+    return;
+  }
+  el.hidden = false; $("nomap").hidden = true;
+  if (!map){
+    map = L.map(el, { worldCopyJump: true });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+  }
+  map.invalidateSize();
+  map.setView([lat, lon], zoom);
+  if (marker) marker.remove();
+  marker = L.marker([lat, lon], { title: label, alt: label }).addTo(map);
+}
+function hideMap(text){
+  $("map").hidden = true; $("nomap").hidden = false; $("nomap").textContent = text;
+}
+function fmtCoord(lat, lon){
+  const f = (v, pos, neg) => Math.abs(v).toFixed(4) + "° " + (v >= 0 ? pos : neg);
+  return f(lat, "N", "S") + ", " + f(lon, "Ø", "V");
+}
+
+/* ---------- Visning ---------- */
+function setStatus(text, isErr){ $("status").textContent = text || ""; $("status").classList.toggle("err", !!isErr); }
+function clearViews(){ $("result").hidden = true; $("choices").hidden = true; }
+
+function renderChoices(heading, list){
+  $("choicesTtl").textContent = heading;
+  const ul = $("choiceList"); ul.innerHTML = "";
+  for (const p of list){
+    const li = document.createElement("li");
+    const b = document.createElement("button"); b.type = "button";
+    const th = document.createElement("span"); th.className = "thumb";
+    if (p.thumb) th.style.backgroundImage = `url("${p.thumb.replace(/"/g, "%22")}")`;
+    const tx = document.createElement("span");
+    const t = document.createElement("div"); t.className = "t"; t.textContent = p.title;
+    const d = document.createElement("div"); d.className = "d"; d.textContent = p.description;
+    tx.append(t, d); b.append(th, tx);
+    b.addEventListener("click", () => go(p.title));
+    li.append(b); ul.append(li);
+  }
+  $("choices").hidden = false;
+}
+
+function renderSummary(s){
+  $("rTitle").textContent = s.title;
+  $("rDesc").textContent = s.description || "";
+  $("rDesc").hidden = !s.description;
+  const img = $("rImg");
+  // Originalbildet er skarpere enn miniatyren (320 px), men brukes bare når det ikke er for stort
+  const orig = s.originalimage && s.originalimage.width <= 1600 ? s.originalimage.source : "";
+  const src = orig || (s.thumbnail && s.thumbnail.source) || "";
+  if (src){ img.src = src; img.alt = s.title; img.hidden = false; } else { img.removeAttribute("src"); img.hidden = true; }
+  $("rText").textContent = s.extract || "Wikipedia har ingen innledning for denne siden.";
+  const wiki = (s.content_urls && s.content_urls.desktop && s.content_urls.desktop.page) || (WIKI + "/wiki/" + titleKey(s.title));
+  $("rWiki").href = wiki;
+  const g = gmapsUrl(s.title);
+  $("rGmap").href = g; $("rGmap2").href = g;
+  $("result").hidden = false;
+  if (s.coordinates && isFinite(s.coordinates.lat) && isFinite(s.coordinates.lon)){
+    const { lat, lon } = s.coordinates;
+    $("rCoord").textContent = fmtCoord(lat, lon);
+    showMap(lat, lon, zoomFor(s.description), s.title);
+  } else {
+    $("rCoord").textContent = "";
+    hideMap("Wikipedia oppgir ingen koordinater for denne siden. Prøv Google Maps-knappen.");
+  }
+  document.title = s.title + " – Globetrotter";
+}
+
+/* ---------- Oppslag ----------
+   1) Hent sammendrag for tittelen. 2) Er det en flertydig side eller ingen side: vis søkeresultater å velge fra. */
+let lookupSeq = 0;
+async function lookup(term){
+  term = term.trim();
+  if (!term) return;
+  const my = ++lookupSeq;
+  closeSugg(); clearViews(); setStatus("Søker …");
+  try{
+    const s = await getJson(summaryUrl(term));
+    if (my !== lookupSeq) return;
+    if (!s.notFound && s.type !== "disambiguation" && s.title){
+      setStatus(""); renderSummary(s); return;
+    }
+    const res = sortPages(await getJson(searchUrl(term)));
+    if (my !== lookupSeq) return;
+    const list = res.filter(p => !/\(disambiguation\)$/i.test(p.title) && !(s.type === "disambiguation" && p.title === s.title));
+    if (!list.length){ setStatus(`Fant ingenting for «${term}». Sjekk stavemåten, og husk at søket går mot engelsk Wikipedia.`, true); return; }
+    setStatus("");
+    renderChoices(s.type === "disambiguation" ? `«${term}» kan være flere ting – velg ett:` : `Fant ingen side som heter «${term}». Mente du …`, list);
+  }catch(e){
+    if (my !== lookupSeq) return;
+    setStatus("Kunne ikke hente fra Wikipedia. Sjekk nettforbindelsen og prøv igjen.", true);
+  }
+}
+
+/* Søket lagres i adressen (#Tittel), så tilbakeknapp, deling og bokmerker virker */
+function go(term){
+  term = term.trim(); if (!term) return;
+  const h = "#" + titleKey(term);
+  if (location.hash === h) lookup(term);
+  else location.hash = h;           // hashchange kaller lookup
+}
+function fromHash(){
+  const raw = location.hash.slice(1);
+  if (!raw) return;
+  let term; try{ term = decodeURIComponent(raw).replace(/_/g, " "); }catch{ term = raw; }
+  $("q").value = term;
+  lookup(term);
+}
+window.addEventListener("hashchange", fromHash);
+
+/* ---------- Forslag mens du skriver ---------- */
+let sugg = [], active = -1, suggCtl = null, suggTimer = 0;
+function closeSugg(){
+  clearTimeout(suggTimer); if (suggCtl) suggCtl.abort();
+  sugg = []; active = -1; $("sugg").hidden = true; $("sugg").innerHTML = "";
+  $("q").setAttribute("aria-expanded", "false"); $("q").removeAttribute("aria-activedescendant");
+}
+function drawSugg(){
+  const ul = $("sugg"); ul.innerHTML = "";
+  sugg.forEach((p, i) => {
+    const li = document.createElement("li");
+    li.id = "s" + i; li.setAttribute("role", "option"); li.setAttribute("aria-selected", String(i === active));
+    const th = document.createElement("span"); th.className = "thumb";
+    if (p.thumb) th.style.backgroundImage = `url("${p.thumb.replace(/"/g, "%22")}")`;
+    const tx = document.createElement("div");
+    const t = document.createElement("div"); t.className = "t"; t.textContent = p.title;
+    tx.append(t);
+    if (p.description){ const d = document.createElement("div"); d.className = "d"; d.textContent = p.description; tx.append(d); }
+    li.append(th, tx);
+    li.addEventListener("mousedown", e => { e.preventDefault(); pick(i); });
+    ul.append(li);
+  });
+  const open = sugg.length > 0;
+  ul.hidden = !open; $("q").setAttribute("aria-expanded", String(open));
+  if (active >= 0){ $("q").setAttribute("aria-activedescendant", "s" + active); $("s" + active).scrollIntoView({ block: "nearest" }); }
+  else $("q").removeAttribute("aria-activedescendant");
+}
+function pick(i){ const p = sugg[i]; if (!p) return; $("q").value = p.title; closeSugg(); go(p.title); }
+async function loadSugg(term){
+  if (suggCtl) suggCtl.abort();
+  suggCtl = new AbortController();
+  const ctl = suggCtl;
+  try{
+    const list = sortPages(await getJson(suggestUrl(term), ctl.signal));
+    if (ctl.signal.aborted || $("q").value.trim() !== term) return;
+    sugg = list; active = -1; drawSugg();
+  }catch(e){ /* forslag er bare hjelp – feil vises ikke */ }
+}
+$("q").addEventListener("input", () => {
+  const term = $("q").value.trim();
+  clearTimeout(suggTimer);
+  if (term.length < 2){ closeSugg(); return; }
+  suggTimer = setTimeout(() => loadSugg(term), 250);
+});
+$("q").addEventListener("keydown", e => {
+  if ($("sugg").hidden) return;
+  if (e.key === "ArrowDown"){ e.preventDefault(); active = (active + 1) % sugg.length; drawSugg(); }
+  else if (e.key === "ArrowUp"){ e.preventDefault(); active = active <= 0 ? sugg.length - 1 : active - 1; drawSugg(); }
+  else if (e.key === "Escape"){ e.preventDefault(); closeSugg(); }
+  else if (e.key === "Enter" && active >= 0){ e.preventDefault(); pick(active); }
+});
+$("q").addEventListener("blur", () => setTimeout(closeSugg, 120));
+$("form").addEventListener("submit", e => { e.preventDefault(); closeSugg(); $("q").blur(); go($("q").value); });
+
+$("rImg").addEventListener("error", () => { $("rImg").hidden = true; });   // bilde som ikke lastes, skjules
+
+/* ---------- Info-vindu ---------- */
+function openInfo(){ $("infoModal").hidden = false; $("infoclose").focus(); }
+function closeInfo(){ $("infoModal").hidden = true; $("infobtn").focus(); }
+$("infobtn").onclick = openInfo; $("infoclose").onclick = closeInfo;
+$("infoModal").addEventListener("click", e => { if (e.target.id === "infoModal") closeInfo(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("infoModal").hidden) closeInfo(); });
+
+$("ver").textContent = "v" + VERSION;
+if (location.hash) fromHash(); else $("q").focus();
+</script>
+</body>
+</html>
