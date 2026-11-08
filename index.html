@@ -4,26 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Stedsnuser</title>
-<meta name="description" content="Stedsnuser: søk etter et land, en by eller et sted og få fakta fra Wikipedia, kart og lenke til Google Maps.">
+<meta name="description" content="Stedsnuser: søk etter et sted eller sett en pin på globusen, og få fakta fra Wikipedia, artikler i nærheten og lenke til Google Maps.">
 <meta name="theme-color" content="#EEF1EC" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0D1716" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2714%27 fill=%27%231F6F68%27/%3E%3Cpath d=%27M2 16h28M16 2c-5 4-5 24 0 28M16 2c5 4 5 24 0 28M5 9h22M5 23h22%27 stroke=%27%23F2D28A%27 stroke-width=%271.6%27 fill=%27none%27/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
-<!-- Leaflet 1.9.4 (kart). Integritetsnøklene er fra leafletjs.com/download -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<!-- MapLibre GL JS 5.24.0 (globus). Fast versjon, så en ny utgave ikke endrer appen uten videre -->
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <style>
-/* Stedsnuser v1.1.0
+/* Stedsnuser v2.0.0
+   2.0.0  Globus (MapLibre) i stedet for flatt kart, bryter satellitt/kart, roterer ved start.
+          Pin: klikk (PC) eller trykk og hold (mobil) – viser stedet og Wikipedia-artikler i nærheten
    1.1.0  Nytt navn: Stedsnuser (tidligere Globetrotter). Repoet heter fortsatt Globetrotter.io
    1.0.0  Første versjon: søk med forslag, utdrag fra engelsk Wikipedia, kart (OpenStreetMap)
           og lenke til Google Maps */
 
-/* Layout: topp med navn/versjon/info, søkefelt, så resultat: tekst til venstre og kart til høyre (stablet på mobil) */
+/* Layout: topp (navn/versjon/info) → søk → globus i full bredde → resultat: fakta til venstre, i nærheten til høyre */
 :root{
   --bg:#EEF1EC; --surface:#FAFBF8; --ink:#16211F; --muted:#5A6764; --line:#D3DAD5;
-  --sea:#1F6F68; --sea-soft:#D6E8E4; --sand:#C98A2B; --sand-soft:#F4E6CC; --err:#B23A2A;
+  --sea:#1F6F68; --sea-soft:#D6E8E4; --sand:#C98A2B; --sand-soft:#F4E6CC; --err:#B23A2A; --space:#060B14;
   --display:"Fraunces",Georgia,serif;
   --body:"Figtree",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
@@ -37,9 +39,9 @@
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:15.5px/1.5 var(--body);
   padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-.wrap{max-width:1040px;margin:0 auto;padding-block:20px 40px;
+.wrap{max-width:1100px;margin:0 auto;padding-block:20px 40px;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
-  display:flex;flex-direction:column;gap:18px}
+  display:flex;flex-direction:column;gap:16px}
 a{color:var(--sea)}
 
 /* Topp: navn, versjon og info-knapp oppe til venstre */
@@ -54,7 +56,7 @@ a{color:var(--sea)}
 .tag{margin:4px 0 0;color:var(--muted);font-size:14px}
 
 /* Søk */
-.searchbox{position:relative}
+.searchbox{position:relative;z-index:5}
 .searchrow{display:flex;gap:8px}
 #q{flex:1;min-width:0;font:inherit;font-size:17px;padding:13px 16px;border:1.5px solid var(--line);border-radius:12px;
   background:var(--surface);color:var(--ink)}
@@ -67,46 +69,60 @@ a{color:var(--sea)}
 .sugg li{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer}
 .sugg li[aria-selected="true"],.sugg li:hover{background:var(--sea-soft)}
 .thumb{width:40px;height:40px;flex:none;border-radius:6px;background:var(--line) center/cover no-repeat}
-.sugg .t{font-weight:600}
-.sugg .d{font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.t{font-weight:600}
+.d{font-size:13px;color:var(--muted)}
+.sugg .d{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+
+/* Globus */
+.globe{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:var(--space)}
+#map{height:clamp(320px,58vh,640px);width:100%;
+  -webkit-touch-callout:none;-webkit-user-select:none;user-select:none}   /* trykk og hold skal sette pin, ikke merke tekst */
+.maplibregl-canvas{cursor:crosshair}
+.maplibregl-canvas-container.maplibregl-interactive:active .maplibregl-canvas{cursor:grabbing}
+.layers{position:absolute;top:10px;left:10px;z-index:2;display:flex;background:rgba(10,18,17,.72);border-radius:10px;padding:3px;gap:2px;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.layers button{all:unset;cursor:pointer;padding:6px 12px;border-radius:8px;font:600 13px var(--body);color:#D9E4E1}
+.layers button[aria-pressed="true"]{background:#F2D28A;color:#1A1405}
+.layers button:focus-visible{outline:2px solid #F2D28A;outline-offset:1px}
+.hint{position:absolute;left:10px;bottom:10px;z-index:2;margin:0;max-width:calc(100% - 120px);
+  font-size:12.5px;color:#E6EEEC;background:rgba(10,18,17,.66);padding:5px 10px;border-radius:8px;pointer-events:none}
+.nomap{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:#C9D6D3}
+.pin{width:26px;height:36px;margin-top:-18px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.45))}
 
 /* Status og valgliste (flertydige søk) */
 .status{color:var(--muted);margin:0}
+.status:empty{display:none}
 .status.err{color:var(--err)}
-.choices{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
-.choices h2{margin:0 0 8px;font:600 20px var(--display)}
-.choices ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
-.choices button{all:unset;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer}
-.choices button:hover,.choices button:focus-visible{background:var(--sea-soft)}
-.choices .t{font-weight:600}
-.choices .d{font-size:13px;color:var(--muted)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;min-width:0}
+.panel h2{margin:0 0 8px;font:600 20px var(--display)}
+.list{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.list button{all:unset;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer}
+.list button:hover,.list button:focus-visible{background:var(--sea-soft)}
+.list .tx{flex:1;min-width:0}
+.list .dist{font:500 12.5px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 
 /* Resultat */
-.result{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+.result{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
 @media (max-width:760px){.result{grid-template-columns:1fr}}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px 20px;min-width:0}
 .card h2{margin:0;font:800 clamp(24px,4.5vw,32px)/1.1 var(--display);letter-spacing:-.01em;overflow-wrap:anywhere}
 .card .desc{margin:4px 0 0;color:var(--sand);font-weight:600}
+.where{margin:6px 0 0;font-size:13px;color:var(--muted)}
 .hero{display:block;width:100%;max-height:300px;object-fit:cover;border-radius:10px;margin:14px 0 2px;background:var(--line)}
 .extract{margin:12px 0 0;white-space:pre-line}
-.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.coord{display:block;margin-top:12px;font:500 13px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:10px;font-weight:600;text-decoration:none;
   border:1.5px solid var(--sea);color:var(--sea)}
 .btn.solid{background:var(--sea);color:#fff}
 @media (prefers-color-scheme:dark){.btn.solid{color:#0D1716}}
 .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.mapcard{padding:0;overflow:hidden}
-#map{height:380px;width:100%;background:var(--sea-soft)}
-@media (max-width:760px){#map{height:300px}}
-.mapfoot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px}
-.coord{font:500 13px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
-.nomap{padding:18px 20px;color:var(--muted)}
-.leaflet-container{font-family:var(--body)}
+.empty{color:var(--muted);margin:0}
 
 /* Info-vindu */
 .modal{position:fixed;inset:0;z-index:2000;background:rgba(5,12,11,.55);display:grid;place-items:center;
   padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
-.mbox{background:var(--surface);border:1px solid var(--line);border-radius:16px;width:100%;max-width:580px;max-height:100%;overflow:auto;padding:18px 22px 22px;box-shadow:0 24px 70px rgba(0,0,0,.35)}
+.mbox{background:var(--surface);border:1px solid var(--line);border-radius:16px;width:100%;max-width:600px;max-height:100%;overflow:auto;padding:18px 22px 22px;box-shadow:0 24px 70px rgba(0,0,0,.35)}
 .mhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
 .mhead h2{margin:0;font:700 22px var(--display)}
 .ib{all:unset;cursor:pointer;width:38px;height:38px;display:grid;place-items:center;border-radius:50%;font-size:17px;color:var(--muted)}
@@ -127,11 +143,11 @@ footer p{margin:0}
     <div class="brandrow">
       <h1 class="brand">
         <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="var(--sea)"/><path d="M2 16h28M16 2c-5 4-5 24 0 28M16 2c5 4 5 24 0 28M5 9h22M5 23h22" stroke="var(--sand-soft)" stroke-width="1.6" fill="none"/></svg>
-        Stedsnuser<span class="ver" id="ver">v1.1.0</span>
+        Stedsnuser<span class="ver" id="ver">v2.0.0</span>
       </h1>
       <button class="infobtn" id="infobtn" aria-label="Om appen og hjelp" title="Om appen og hjelp">i</button>
     </div>
-    <p class="tag">Søk etter et land, en by eller et sted, hvor som helst i verden.</p>
+    <p class="tag">Søk etter et sted, eller sett en pin på globusen og se hva som finnes der.</p>
   </header>
 
   <form class="searchbox" id="form" role="search" autocomplete="off">
@@ -143,53 +159,71 @@ footer p{margin:0}
     <ul class="sugg" id="sugg" role="listbox" aria-label="Forslag" hidden></ul>
   </form>
 
+  <section class="globe" aria-label="Globus">
+    <div id="map"></div>
+    <div class="layers" role="group" aria-label="Bakgrunn">
+      <button type="button" id="lySat" aria-pressed="true">Satellitt</button>
+      <button type="button" id="lyMap" aria-pressed="false">Kart</button>
+    </div>
+    <p class="hint" id="hint"></p>
+    <p class="nomap" id="nomap" hidden></p>
+  </section>
+
   <p class="status" id="status" role="status" aria-live="polite"></p>
 
-  <section class="choices" id="choices" hidden>
+  <section class="panel" id="choices" hidden>
     <h2 id="choicesTtl">Mente du …</h2>
-    <ul id="choiceList"></ul>
+    <ul class="list" id="choiceList"></ul>
   </section>
 
   <section class="result" id="result" hidden>
     <article class="card" id="info">
       <h2 id="rTitle"></h2>
       <p class="desc" id="rDesc"></p>
+      <p class="where" id="rWhere" hidden></p>
       <img class="hero" id="rImg" alt="" hidden>
       <p class="extract" id="rText"></p>
+      <span class="coord" id="rCoord"></span>
       <div class="links">
         <a class="btn solid" id="rWiki" target="_blank" rel="noopener">Les mer på Wikipedia ↗</a>
         <a class="btn" id="rGmap" target="_blank" rel="noopener">Åpne i Google Maps ↗</a>
       </div>
     </article>
-    <div class="card mapcard">
-      <div id="map" role="img" aria-label="Kart"></div>
-      <p class="nomap" id="nomap" hidden></p>
-      <div class="mapfoot">
-        <span class="coord" id="rCoord"></span>
-        <a class="btn" id="rGmap2" target="_blank" rel="noopener">Google Maps ↗</a>
-      </div>
-    </div>
+    <section class="panel" id="near" hidden>
+      <h2 id="nearTtl">I nærheten</h2>
+      <ul class="list" id="nearList"></ul>
+      <p class="empty" id="nearEmpty" hidden>Ingen Wikipedia-artikler innen 10 km.</p>
+    </section>
   </section>
 
-  <footer><p>Tekst fra <a href="https://en.wikipedia.org" target="_blank" rel="noopener">engelsk Wikipedia</a> (CC BY-SA). Kart © OpenStreetMap contributors.</p></footer>
+  <footer><p>Tekst fra <a href="https://en.wikipedia.org" target="_blank" rel="noopener">engelsk Wikipedia</a> (CC BY-SA).
+    Satellitt: <a href="https://s2maps.eu" target="_blank" rel="noopener">EOxCloudless</a> fra EOX IT Services GmbH (inneholder modifiserte Copernicus Sentinel-data 2024).
+    Kart: <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © OpenMapTiles.
+    Stedsnavn og kartdata © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors.</p></footer>
 </div>
 
 <div class="modal" id="infoModal" hidden>
   <div class="mbox" role="dialog" aria-modal="true" aria-labelledby="infottl">
     <div class="mhead"><h2 id="infottl">Om Stedsnuser</h2><button class="ib" id="infoclose" aria-label="Lukk">✕</button></div>
-    <h3>Slik bruker du appen</h3>
+    <h3>Søk</h3>
     <ul>
-      <li><b>Søk:</b> skriv navnet på et land, en by eller et sted. Forslag dukker opp mens du skriver.</li>
-      <li><b>Velg:</b> trykk på et forslag, eller bruk <kbd>↑</kbd> <kbd>↓</kbd> og <kbd>Enter</kbd>. <kbd>Esc</kbd> lukker forslagene.</li>
-      <li><b>Flere treff:</b> gir navnet flere steder (som «Paris»), får du en liste å velge fra.</li>
-      <li><b>Del og bokmerk:</b> adressen i nettleseren viser hva du har søkt på, så du kan dele den eller gå tilbake med tilbakeknappen.</li>
+      <li>Skriv navnet på et land, en by eller et sted. Forslag dukker opp mens du skriver. Velg med musa, eller med <kbd>↑</kbd> <kbd>↓</kbd> og <kbd>Enter</kbd>.</li>
+      <li>Gir navnet flere steder (som «Paris»), får du en liste å velge fra. Globusen flyr til stedet du velger.</li>
     </ul>
+    <h3>Globusen</h3>
+    <ul>
+      <li><b>PC:</b> klikk for å sette en pin. Hold inne venstre museknapp og dra for å flytte. Rullehjulet zoomer. Høyre museknapp og dra roterer og vipper.</li>
+      <li><b>Mobil:</b> trykk og hold for å sette en pin. Dra med én finger for å flytte, knip med to fingre for å zoome.</li>
+      <li><b>Satellitt / Kart:</b> bryteren oppe til venstre på globusen. Satellittbildet er skyfritt, men viser ikke navn. Kartet har navn og veier.</li>
+    </ul>
+    <h3>Når du setter en pin</h3>
+    <p>Appen finner hvilket sted pinnen står på, og hvor detaljert avhenger av hvor langt inne du er: langt ute gir land, nærmere gir fylke eller by. Har stedet en Wikipedia-artikkel, vises den. Ved siden av får du en liste over Wikipedia-artikler innen 10 km fra pinnen, nærmeste først.</p>
     <h3>Kilder</h3>
-    <p>Teksten er innledningen fra engelsk Wikipedia, med lenke til hele artikkelen. Kartet viser punktet Wikipedia oppgir for stedet. Har artikkelen ikke koordinater, vises ikke noe kart, men Google Maps-knappen virker fortsatt.</p>
-    <p>Kartet inne i appen er OpenStreetMap, fordi Googles innebygde kart krever en API-nøkkel. Google Maps-knappen åpner stedet i Google Maps-appen på mobil, eller på nettsiden på PC.</p>
-    <p>Appen trenger nett. Den lagrer ingenting om deg.</p>
+    <p>Tekst: engelsk Wikipedia. Stedsnavn ut fra pin: OpenStreetMap (Nominatim) og Wikidata. Satellittbilder: EOxCloudless (Copernicus Sentinel-2), gratis for ikke-kommersiell bruk. Kart: OpenFreeMap. Google Maps-knappen åpner stedet i Google Maps-appen på mobil, eller på nettsiden på PC.</p>
+    <p>Appen trenger nett. Den lagrer bare valget mellom satellitt og kart i nettleseren din.</p>
     <h3>Versjoner</h3>
     <div class="vlog">
+      <b>v2.0.0</b><span>Globus i stedet for flatt kart, med bryter mellom satellitt og kart. Sett en pin for å se stedet og Wikipedia-artikler i nærheten.</span>
       <b>v1.1.0</b><span>Nytt navn: Stedsnuser (tidligere Globetrotter).</span>
       <b>v1.0.0</b><span>Første versjon: søk med forslag, utdrag fra engelsk Wikipedia, kart og lenke til Google Maps.</span>
     </div>
@@ -198,11 +232,14 @@ footer p{margin:0}
 
 <script>
 "use strict";
-const VERSION = "1.1.0";
+const VERSION = "2.0.0";
 const WIKI = "https://en.wikipedia.org";
+const NOMINATIM = "https://nominatim.openstreetmap.org";
+const WIKIDATA = "https://www.wikidata.org/w/api.php";
+const NEAR_RADIUS = 10000;   // meter – høyeste verdi Wikipedias geosøk tillater
 const $ = id => document.getElementById(id);
 
-/* ---------- Wikipedia ---------- */
+/* ================= Wikipedia ================= */
 // Action API: origin=* gir CORS uten innlogging. formatversion=2 gir pages som liste.
 function apiUrl(params){
   const p = new URLSearchParams({ action:"query", format:"json", formatversion:"2", origin:"*",
@@ -213,7 +250,8 @@ function sortPages(data){
   const pages = (data && data.query && data.query.pages) || [];
   return pages.filter(p => !p.missing && p.title)
     .sort((a, b) => (a.index ?? 999) - (b.index ?? 999))
-    .map(p => ({ title: p.title, description: p.description || "", thumb: p.thumbnail ? p.thumbnail.source : "" }));
+    .map(p => ({ title: p.title, description: p.description || "", thumb: p.thumbnail ? p.thumbnail.source : "",
+                 coord: p.coordinates && p.coordinates[0] ? { lat: p.coordinates[0].lat, lon: p.coordinates[0].lon } : null }));
 }
 async function getJson(url, signal){
   const r = await fetch(url, { signal, headers: { "Accept": "application/json" } });
@@ -223,16 +261,54 @@ async function getJson(url, signal){
 }
 const suggestUrl = term => apiUrl({ generator:"prefixsearch", gpssearch:term, gpslimit:"8", pilimit:"8" });
 const searchUrl  = term => apiUrl({ generator:"search", gsrsearch:term, gsrlimit:"10", pilimit:"10" });
+const nearUrl    = (lat, lon) => apiUrl({ generator:"geosearch", ggscoord:`${lat}|${lon}`, ggsradius:String(NEAR_RADIUS),
+                                          ggslimit:"20", pilimit:"20", prop:"coordinates|description|pageimages" });
 const titleKey   = title => encodeURIComponent(title.trim().replace(/ /g, "_"));
 const summaryUrl = title => WIKI + "/api/rest_v1/page/summary/" + titleKey(title);
 
-/* ---------- Google Maps (offisielt URL-format, ingen nøkkel: developers.google.com/maps/documentation/urls) ---------- */
-function gmapsUrl(title){
-  return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(title);
+/* ================= Google Maps (offisielt URL-format, ingen nøkkel) ================= */
+const gmapsUrl = query => "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(query);
+
+/* ================= Pin → stedsnavn (Nominatim + Wikidata) =================
+   Nominatim (OpenStreetMap) tillater maks én forespørsel i sekundet, så kallene køes. */
+let nomLast = 0;
+async function nominatim(lat, lon, zoom){
+  const wait = nomLast + 1100 - Date.now();
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  nomLast = Date.now();
+  const p = new URLSearchParams({ format:"jsonv2", lat:String(lat), lon:String(lon), zoom:String(zoom),
+    extratags:"1", "accept-language":"en" });
+  return getJson(NOMINATIM + "/reverse?" + p.toString());
+}
+// Kartzoom (MapLibre) → Nominatims detaljnivå: 3 land, 5 fylke/delstat, 8 region, 10 by, 12 bydel, 14 strøk
+function nomZoomFor(mapZoom){
+  const z = mapZoom + 1;              // MapLibre bruker 512 px-fliser, Nominatim følger 256 px-skalaen
+  if (z <= 4) return 3;
+  if (z <= 6) return 5;
+  if (z <= 8) return 8;
+  if (z <= 11) return 10;
+  if (z <= 13) return 12;
+  return 14;
+}
+// Engelsk Wikipedia-tittel for et Nominatim-treff: via Wikidata-ID, ellers via wikipedia-taggen hvis den er engelsk
+async function enTitleFor(place){
+  const tags = (place && place.extratags) || {};
+  if (tags.wikidata && /^Q\d+$/.test(tags.wikidata)){
+    try{
+      const p = new URLSearchParams({ action:"wbgetentities", ids:tags.wikidata, props:"sitelinks", sitefilter:"enwiki", format:"json", origin:"*" });
+      const d = await getJson(WIKIDATA + "?" + p.toString());
+      const e = d && d.entities && d.entities[tags.wikidata];
+      const t = e && e.sitelinks && e.sitelinks.enwiki && e.sitelinks.enwiki.title;
+      if (t) return t;
+    }catch(e){ /* prøv wikipedia-taggen */ }
+  }
+  if (typeof tags.wikipedia === "string" && /^en:/.test(tags.wikipedia)) return tags.wikipedia.slice(3);
+  return "";
 }
 
-/* ---------- Kartzoom ut fra Wikipedias korte beskrivelse ----------
-   Typeordet som står FØRST bestemmer: «City in Texas, United States» er en by, ikke en delstat. */
+/* ================= Kartzoom ut fra Wikipedias korte beskrivelse =================
+   Typeordet som står FØRST bestemmer: «City in Texas, United States» er en by, ikke en delstat.
+   Verdiene er i 256 px-skala (som Leaflet); globusen trekker fra 1. */
 const ZOOMS = [
   [3,  /\b(continent|ocean)\b/],
   [5,  /\b(island country|island nation|country|sovereign state|nation|kingdom|republic|sea)\b/],   // vinner ved likt startpunkt
@@ -250,95 +326,236 @@ function zoomFor(desc){
   return best;
 }
 
-/* ---------- Kart (Leaflet + OpenStreetMap) ---------- */
-let map = null, marker = null;
-function showMap(lat, lon, zoom, label){
-  const el = $("map");
-  if (typeof L === "undefined"){           // Leaflet lastet ikke (f.eks. blokkert CDN)
-    el.hidden = true; $("nomap").hidden = false; $("nomap").textContent = "Kartet kunne ikke lastes.";
-    return;
-  }
-  el.hidden = false; $("nomap").hidden = true;
-  if (!map){
-    map = L.map(el, { worldCopyJump: true });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
-  }
-  map.invalidateSize();
-  map.setView([lat, lon], zoom);
-  if (marker) marker.remove();
-  marker = L.marker([lat, lon], { title: label, alt: label }).addTo(map);
+/* ================= Avstand og formatering ================= */
+function distKm(a, b){
+  const R = 6371.0088, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
-function hideMap(text){
-  $("map").hidden = true; $("nomap").hidden = false; $("nomap").textContent = text;
-}
+const fmtKm = km => km < 1 ? Math.round(km * 1000 / 10) * 10 + " m" : km.toFixed(1).replace(".", ",") + " km";
 function fmtCoord(lat, lon){
   const f = (v, pos, neg) => Math.abs(v).toFixed(4) + "° " + (v >= 0 ? pos : neg);
   return f(lat, "N", "S") + ", " + f(lon, "Ø", "V");
 }
 
-/* ---------- Visning ---------- */
+/* ================= Globus (MapLibre GL JS) ================= */
+const EOX_ATTR = '<a href="https://s2maps.eu" target="_blank" rel="noopener">EOxCloudless</a> by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024)';
+const SKY = { "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 1, 5, 1, 7, 0] };   // atmosfære ute, borte når du er nær
+const STYLES = {
+  sat: {
+    version: 8,
+    projection: { type: "globe" },
+    sources: { satellite: { type: "raster", tileSize: 256, maxzoom: 14, attribution: EOX_ATTR,
+      tiles: ["https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg"] } },
+    layers: [{ id: "satellite", type: "raster", source: "satellite" }],
+    sky: SKY,
+    light: { anchor: "map", position: [1.5, 90, 80] }
+  },
+  map: "https://tiles.openfreemap.org/styles/liberty"
+};
+let map = null, pinMarker = null, layer = "sat";
+let spinning = false, lastPointer = "mouse", pressTimer = 0, pressStart = null;
+const reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const touchFirst  = window.matchMedia && matchMedia("(hover: none) and (pointer: coarse)").matches;
+
+try{ const v = localStorage.getItem("stedsnuser.bakgrunn"); if (v === "sat" || v === "map") layer = v; }catch(e){}
+
+function noGlobe(text){
+  $("nomap").hidden = false; $("nomap").textContent = text;
+  $("hint").hidden = true; document.querySelector(".layers").hidden = true;
+}
+
+function initGlobe(){
+  if (typeof maplibregl === "undefined"){ noGlobe("Globusen kunne ikke lastes. Søket virker fortsatt."); return; }
+  try{
+    map = new maplibregl.Map({
+      container: "map",
+      style: STYLES[layer],
+      center: [10, 25], zoom: 1.2,
+      doubleClickZoom: false,           // dobbeltklikk skal ikke zoome – klikk setter pin
+      attributionControl: { compact: true },
+      maxPitch: 70
+    });
+  }catch(e){ noGlobe("Nettleseren din klarer ikke å vise globusen (WebGL mangler). Søket virker fortsatt."); return; }
+
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+  // Ny stil (bryteren) nullstiller projeksjon og himmel – sett dem på nytt
+  map.on("style.load", () => {
+    try{ map.setProjection({ type: "globe" }); if (map.setSky) map.setSky(SKY); }catch(e){}
+  });
+
+  // Rotasjon ved start, stopper ved første berøring
+  ["mousedown", "touchstart", "wheel", "dragstart"].forEach(ev => map.on(ev, stopSpin));
+  if (!reduceMotion && !location.hash){ spinning = true; requestAnimationFrame(spin); }
+
+  // Hvilken peker trykket sist? (klikk fra berøring skal ikke sette pin – der er det trykk og hold)
+  map.getCanvasContainer().addEventListener("pointerdown", e => { lastPointer = e.pointerType || "mouse"; }, true);
+  map.getCanvasContainer().addEventListener("contextmenu", e => { if (lastPointer === "touch") e.preventDefault(); });
+
+  // PC: klikk setter pin. MapLibre sender ikke klikk hvis musa ble dratt (da er det panorering).
+  map.on("click", e => { if (lastPointer !== "touch") dropPin(e.lngLat); });
+
+  // Mobil: trykk og hold i 0,55 s med én finger setter pin. Flytter fingeren seg, eller kommer en finger til, avbrytes det.
+  map.on("touchstart", e => {
+    cancelPress();
+    const n = e.originalEvent && e.originalEvent.touches ? e.originalEvent.touches.length : 1;
+    if (n !== 1) return;
+    pressStart = e.point;
+    const ll = e.lngLat;
+    pressTimer = setTimeout(() => {
+      pressTimer = 0;
+      if (navigator.vibrate) try{ navigator.vibrate(15); }catch(err){}
+      dropPin(ll);
+    }, 550);
+  });
+  map.on("touchmove", e => {
+    if (!pressTimer) return;
+    const n = e.originalEvent && e.originalEvent.touches ? e.originalEvent.touches.length : 1;
+    if (n !== 1 || !pressStart || Math.hypot(e.point.x - pressStart.x, e.point.y - pressStart.y) > 10) cancelPress();
+  });
+  map.on("touchend", cancelPress);
+  map.on("touchcancel", cancelPress);
+}
+function cancelPress(){ if (pressTimer){ clearTimeout(pressTimer); pressTimer = 0; } }
+
+let spinLast = 0;
+function spin(ts){
+  if (!spinning || !map) return;
+  if (spinLast){
+    const c = map.getCenter();
+    map.jumpTo({ center: [c.lng + (ts - spinLast) * 0.006, c.lat] });    // ca. 6° i sekundet
+  }
+  spinLast = ts;
+  requestAnimationFrame(spin);
+}
+function stopSpin(){ spinning = false; spinLast = 0; }
+
+function setLayer(name){
+  if (name === layer && map) return;
+  layer = name;
+  $("lySat").setAttribute("aria-pressed", String(name === "sat"));
+  $("lyMap").setAttribute("aria-pressed", String(name === "map"));
+  try{ localStorage.setItem("stedsnuser.bakgrunn", name); }catch(e){}
+  if (map) map.setStyle(STYLES[name]);
+}
+$("lySat").onclick = () => setLayer("sat");
+$("lyMap").onclick = () => setLayer("map");
+$("lySat").setAttribute("aria-pressed", String(layer === "sat"));
+$("lyMap").setAttribute("aria-pressed", String(layer === "map"));
+
+function pinEl(){
+  const d = document.createElement("div");
+  d.innerHTML = '<svg class="pin" viewBox="0 0 26 36" aria-hidden="true"><path d="M13 35C13 35 25 21 25 12.5A12 12 0 0 0 1 12.5C1 21 13 35 13 35Z" fill="#E9B45A" stroke="#1A1405" stroke-width="1.5"/><circle cx="13" cy="12.5" r="4.5" fill="#1A1405"/></svg>';
+  return d.firstChild;
+}
+function setPin(lat, lon){
+  if (!map) return;
+  if (!pinMarker) pinMarker = new maplibregl.Marker({ element: pinEl(), anchor: "bottom" });
+  pinMarker.setLngLat([lon, lat]).addTo(map);
+}
+function flyTo(lat, lon, zoom){
+  if (!map) return;
+  stopSpin();
+  map.flyTo({ center: [lon, lat], zoom: Math.max(1, zoom), essential: true, speed: 1.4 });
+}
+
+/* ================= Visning ================= */
 function setStatus(text, isErr){ $("status").textContent = text || ""; $("status").classList.toggle("err", !!isErr); }
-function clearViews(){ $("result").hidden = true; $("choices").hidden = true; }
+function clearViews(){ $("result").hidden = true; $("choices").hidden = true; $("near").hidden = true; }
+
+function listItem(p, extra){
+  const li = document.createElement("li");
+  const b = document.createElement("button"); b.type = "button";
+  const th = document.createElement("span"); th.className = "thumb";
+  if (p.thumb) th.style.backgroundImage = `url("${p.thumb.replace(/"/g, "%22")}")`;
+  const tx = document.createElement("span"); tx.className = "tx";
+  const t = document.createElement("div"); t.className = "t"; t.textContent = p.title;
+  tx.append(t);
+  if (p.description){ const d = document.createElement("div"); d.className = "d"; d.textContent = p.description; tx.append(d); }
+  b.append(th, tx);
+  if (extra){ const s = document.createElement("span"); s.className = "dist"; s.textContent = extra; b.append(s); }
+  b.addEventListener("click", () => { $("q").value = p.title; go(p.title); window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" }); });
+  li.append(b);
+  return li;
+}
 
 function renderChoices(heading, list){
   $("choicesTtl").textContent = heading;
   const ul = $("choiceList"); ul.innerHTML = "";
-  for (const p of list){
-    const li = document.createElement("li");
-    const b = document.createElement("button"); b.type = "button";
-    const th = document.createElement("span"); th.className = "thumb";
-    if (p.thumb) th.style.backgroundImage = `url("${p.thumb.replace(/"/g, "%22")}")`;
-    const tx = document.createElement("span");
-    const t = document.createElement("div"); t.className = "t"; t.textContent = p.title;
-    const d = document.createElement("div"); d.className = "d"; d.textContent = p.description;
-    tx.append(t, d); b.append(th, tx);
-    b.addEventListener("click", () => go(p.title));
-    li.append(b); ul.append(li);
-  }
+  for (const p of list) ul.append(listItem(p));
   $("choices").hidden = false;
 }
 
-function renderSummary(s){
+/* Fakta-kortet. opts.pin = {lat,lon,where}: kortet gjelder en pin (globusen flyttes ikke, koordinatene er pinnens) */
+function renderCard(s, opts = {}){
+  const pin = opts.pin || null;
   $("rTitle").textContent = s.title;
   $("rDesc").textContent = s.description || "";
   $("rDesc").hidden = !s.description;
+  $("rWhere").hidden = !(pin && pin.where);
+  $("rWhere").textContent = pin && pin.where ? "📍 Pinnen står i: " + pin.where : "";
   const img = $("rImg");
   // Originalbildet er skarpere enn miniatyren (320 px), men brukes bare når det ikke er for stort
   const orig = s.originalimage && s.originalimage.width <= 1600 ? s.originalimage.source : "";
   const src = orig || (s.thumbnail && s.thumbnail.source) || "";
   if (src){ img.src = src; img.alt = s.title; img.hidden = false; } else { img.removeAttribute("src"); img.hidden = true; }
   $("rText").textContent = s.extract || "Wikipedia har ingen innledning for denne siden.";
-  const wiki = (s.content_urls && s.content_urls.desktop && s.content_urls.desktop.page) || (WIKI + "/wiki/" + titleKey(s.title));
-  $("rWiki").href = wiki;
-  const g = gmapsUrl(s.title);
-  $("rGmap").href = g; $("rGmap2").href = g;
+  const wiki = s.noWiki ? "" : ((s.content_urls && s.content_urls.desktop && s.content_urls.desktop.page) || (WIKI + "/wiki/" + titleKey(s.title)));
+  $("rWiki").hidden = !wiki; if (wiki) $("rWiki").href = wiki;
+
+  const c = pin ? pin : (s.coordinates && isFinite(s.coordinates.lat) && isFinite(s.coordinates.lon) ? s.coordinates : null);
+  $("rCoord").textContent = c ? fmtCoord(c.lat, c.lon) : "Wikipedia oppgir ingen koordinater for denne siden.";
+  $("rGmap").href = pin ? gmapsUrl(pin.lat.toFixed(6) + "," + pin.lon.toFixed(6)) : gmapsUrl(s.title);
   $("result").hidden = false;
-  if (s.coordinates && isFinite(s.coordinates.lat) && isFinite(s.coordinates.lon)){
-    const { lat, lon } = s.coordinates;
-    $("rCoord").textContent = fmtCoord(lat, lon);
-    showMap(lat, lon, zoomFor(s.description), s.title);
-  } else {
-    $("rCoord").textContent = "";
-    hideMap("Wikipedia oppgir ingen koordinater for denne siden. Prøv Google Maps-knappen.");
-  }
   document.title = s.title + " – Stedsnuser";
+
+  if (!pin && c){
+    const z = zoomFor(s.description);
+    setPin(c.lat, c.lon);
+    flyTo(c.lat, c.lon, z - 1);
+    if (z >= 11) loadNear(c.lat, c.lon, s.title); else $("near").hidden = true;
+  } else if (!pin){
+    $("near").hidden = true;
+  }
 }
 
-/* ---------- Oppslag ----------
+/* Wikipedia-artikler innen 10 km, nærmeste først */
+let nearSeq = 0;
+async function loadNear(lat, lon, exclude){
+  const my = ++nearSeq;
+  $("near").hidden = false; $("nearList").innerHTML = ""; $("nearEmpty").hidden = true;
+  $("nearTtl").textContent = "I nærheten – henter …";
+  try{
+    const here = { lat, lon };
+    const list = sortPages(await getJson(nearUrl(lat, lon)))
+      .filter(p => p.title !== exclude && p.coord)
+      .map(p => ({ ...p, km: distKm(here, p.coord) }))
+      .sort((a, b) => a.km - b.km);
+    if (my !== nearSeq) return;
+    $("nearTtl").textContent = `I nærheten (${list.length})`;
+    for (const p of list) $("nearList").append(listItem(p, fmtKm(p.km)));
+    $("nearEmpty").hidden = list.length > 0;
+  }catch(e){
+    if (my !== nearSeq) return;
+    $("nearTtl").textContent = "I nærheten";
+    $("nearEmpty").hidden = false; $("nearEmpty").textContent = "Kunne ikke hente artikler i nærheten.";
+  }
+}
+
+/* ================= Oppslag på navn =================
    1) Hent sammendrag for tittelen. 2) Er det en flertydig side eller ingen side: vis søkeresultater å velge fra. */
 let lookupSeq = 0;
 async function lookup(term){
   term = term.trim();
   if (!term) return;
-  const my = ++lookupSeq;
-  closeSugg(); clearViews(); setStatus("Søker …");
+  const my = ++lookupSeq; nearSeq++;
+  closeSugg(); clearViews(); setStatus("Snuser …");
   try{
     const s = await getJson(summaryUrl(term));
     if (my !== lookupSeq) return;
     if (!s.notFound && s.type !== "disambiguation" && s.title){
-      setStatus(""); renderSummary(s); return;
+      setStatus(""); renderCard(s); return;
     }
     const res = sortPages(await getJson(searchUrl(term)));
     if (my !== lookupSeq) return;
@@ -352,23 +569,90 @@ async function lookup(term){
   }
 }
 
-/* Søket lagres i adressen (#Tittel), så tilbakeknapp, deling og bokmerker virker */
+/* ================= Oppslag på pin =================
+   Nominatim gir stedet på riktig detaljnivå. Mangler det Wikipedia-kobling, prøves grovere nivå (by → fylke → land). */
+async function pinLookup(lat, lon, mapZoom){
+  const my = ++lookupSeq;
+  closeSugg(); clearViews(); setStatus("Snuser rundt pinnen …");
+  setPin(lat, lon);
+  loadNear(lat, lon, "");
+  try{
+    const start = nomZoomFor(mapZoom);
+    const levels = [start, 10, 5, 3].filter((z, i, a) => z <= start && a.indexOf(z) === i).slice(0, 3);
+    let first = null, title = "";
+    for (const z of levels){
+      const place = await nominatim(lat, lon, z);
+      if (my !== lookupSeq) return;
+      if (!place || place.error || place.notFound) break;           // f.eks. hav: ikke noe sted her
+      if (!first) first = place;
+      title = await enTitleFor(place);
+      if (my !== lookupSeq) return;
+      if (title) break;
+    }
+    const where = first ? first.display_name : "";
+    if (title){
+      const s = await getJson(summaryUrl(title));
+      if (my !== lookupSeq) return;
+      if (!s.notFound && s.title){
+        setStatus(""); renderCard(s, { pin: { lat, lon, where: where && where !== s.title ? where : "" } }); return;
+      }
+    }
+    setStatus("");
+    if (first){
+      renderCard({ title: first.name || where.split(",")[0] || "Ukjent sted", description: "", noWiki: true,
+        extract: "Fant ingen Wikipedia-artikkel om akkurat dette stedet. Se listen over artikler i nærheten." },
+        { pin: { lat, lon, where } });
+    } else {
+      renderCard({ title: "Ingen stedsnavn her", description: "", noWiki: true,
+        extract: "OpenStreetMap har ikke noe sted akkurat her – kanskje hav eller ødemark. Zoom inn og prøv nærmere land." },
+        { pin: { lat, lon, where: "" } });
+    }
+  }catch(e){
+    if (my !== lookupSeq) return;
+    setStatus("Kunne ikke finne stedet. Sjekk nettforbindelsen og prøv igjen.", true);
+  }
+}
+function dropPin(ll){
+  if (!ll) return;
+  const w = typeof ll.wrap === "function" ? ll.wrap() : ll;
+  const lat = w.lat, lon = w.lng;
+  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90) return;
+  stopSpin();
+  const z = map ? map.getZoom() : 3;
+  setPin(lat, lon);
+  const h = `#@${lat.toFixed(5)},${lon.toFixed(5)},${z.toFixed(1)}`;
+  if (location.hash === h) pinLookup(+lat.toFixed(5), +lon.toFixed(5), z);
+  else location.hash = h;                      // hashchange kaller pinLookup
+}
+
+/* ================= Adresselinja =================
+   #Tittel = søk, #@lat,lon,zoom = pin. Da virker tilbakeknapp, deling og bokmerker. */
 function go(term){
   term = term.trim(); if (!term) return;
   const h = "#" + titleKey(term);
   if (location.hash === h) lookup(term);
-  else location.hash = h;           // hashchange kaller lookup
+  else location.hash = h;
 }
-function fromHash(){
+function fromHash(fly){
   const raw = location.hash.slice(1);
   if (!raw) return;
+  const m = /^@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)(?:,(\d+(?:\.\d+)?))?$/.exec(raw);
+  if (m){
+    const lat = +m[1], lon = +m[2], z = m[3] !== undefined ? +m[3] : 8;
+    if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180){
+      if (fly) flyTo(lat, lon, z);
+      $("q").value = "";
+      pinLookup(lat, lon, z);
+      return;
+    }
+  }
   let term; try{ term = decodeURIComponent(raw).replace(/_/g, " "); }catch{ term = raw; }
   $("q").value = term;
   lookup(term);
 }
-window.addEventListener("hashchange", fromHash);
+window.addEventListener("hashchange", () => fromHash(false));
 
-/* ---------- Forslag mens du skriver ---------- */
+/* ================= Forslag mens du skriver ================= */
 let sugg = [], active = -1, suggCtl = null, suggTimer = 0;
 function closeSugg(){
   clearTimeout(suggTimer); if (suggCtl) suggCtl.abort();
@@ -424,15 +708,18 @@ $("form").addEventListener("submit", e => { e.preventDefault(); closeSugg(); $("
 
 $("rImg").addEventListener("error", () => { $("rImg").hidden = true; });   // bilde som ikke lastes, skjules
 
-/* ---------- Info-vindu ---------- */
+/* ================= Info-vindu ================= */
 function openInfo(){ $("infoModal").hidden = false; $("infoclose").focus(); }
 function closeInfo(){ $("infoModal").hidden = true; $("infobtn").focus(); }
 $("infobtn").onclick = openInfo; $("infoclose").onclick = closeInfo;
 $("infoModal").addEventListener("click", e => { if (e.target.id === "infoModal") closeInfo(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("infoModal").hidden) closeInfo(); });
 
+/* ================= Start ================= */
 $("ver").textContent = "v" + VERSION;
-if (location.hash) fromHash(); else $("q").focus();
+$("hint").textContent = touchFirst ? "Trykk og hold for å sette en pin" : "Klikk for å sette en pin";
+initGlobe();
+if (location.hash) fromHash(true); else if (!touchFirst) $("q").focus();
 </script>
 </body>
 </html>
